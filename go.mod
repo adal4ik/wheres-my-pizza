@@ -1,8 +1,5 @@
-module restaurant-system
+module wheres-my-pizza
 
-go 1.22.5
+go 1.23.0
 
-require (
-	github.com/jackc/pgx/v5 v5.5.4
-	github.com/rabbitmq/amqp091-go v1.10.0
-)
+require github.com/rabbitmq/amqp091-go v1.10.0 // indirect

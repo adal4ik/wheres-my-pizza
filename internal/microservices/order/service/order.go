@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"time"
 
 	"wheres-my-pizza/internal/connections/rabbitmq"
@@ -12,6 +13,8 @@ import (
 	domain "wheres-my-pizza/internal/microservices/order/domain/dto"
 	dto "wheres-my-pizza/internal/microservices/order/domain/dto"
 	"wheres-my-pizza/internal/microservices/order/repository"
+
+	"github.com/rabbitmq/amqp091-go"
 )
 
 type OrderServiceInterface interface {
@@ -60,7 +63,7 @@ func (or *OrderService) AddOrder(req dto.CreateOrderRequest) (dto.CreateOrderRes
 	}
 	// 3. Generate order number (ORD_YYYYMMDD_NNN)
 	today := time.Now().UTC().Format("20060102")
-	sequence := 1 // TODO: get from DB sequence in transaction
+	sequence := rand.IntN(100) // TODO: get from DB sequence in transaction
 	orderNumber := fmt.Sprintf("ORD_%s_%03d", today, sequence)
 
 	// 4. Save order in database
@@ -99,7 +102,17 @@ func (or *OrderService) AddOrder(req dto.CreateOrderRequest) (dto.CreateOrderRes
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	routingKey := fmt.Sprintf("kitchen.%s.%d", req.OrderType, priority)
-	err = or.rmqClient.Publish(ctx, "orders_topic", routingKey, body, nil, "application/json", true)
+	err = or.rmqClient.Channel().PublishWithContext(
+		ctx,
+		"orders_topic",
+		routingKey,
+		false,
+		false,
+		amqp091.Publishing{
+			ContentType: "application/json",
+			Body:        []byte(body),
+		},
+	)
 	// if err := or.rmqClient.Publish(
 	// 	ctx,
 	// 	"orders-exchange", // TODO: взять из конфигурации

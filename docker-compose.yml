@@ -24,6 +24,7 @@ services:
       - "15672:15672" 
     volumes:
       - ./rabbit/def.json:/etc/rabbitmq/definitions.json:ro
+      - ./rabbit/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
 
 volumes:
   pgdata:

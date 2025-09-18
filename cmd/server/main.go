@@ -11,6 +11,7 @@ import (
 	"wheres-my-pizza/internal/connections/database"
 	"wheres-my-pizza/internal/connections/rabbitmq"
 	"wheres-my-pizza/internal/microservices/order"
+	"wheres-my-pizza/internal/microservices/tracker"
 )
 
 func main() {
@@ -70,9 +71,14 @@ func main() {
 
 	case "tracking-service":
 		fmt.Printf("Starting Tracking Service on port %d\n", *trackingPort)
-		// TODO: init DB + HTTP server
-		_ = cfg
-
+		ctx := context.Background()
+		fmt.Printf("Starting Order Service on port %d (max concurrent = %d)\n", *orderPort, *orderMaxConcurrent)
+		db, err := database.ConnectDB(ctx, cfg.Database)
+		if err != nil {
+			log.Fatalf("Database connection failed: %v", err)
+		}
+		defer db.Close()
+		tracker.Start()
 	case "notification-subscriber":
 		fmt.Println("Starting Notification Subscriber")
 		// TODO: init RabbitMQ consumer

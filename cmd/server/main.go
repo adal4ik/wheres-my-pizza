@@ -1,168 +1,86 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
-	"os/signal"
-	"strconv"
-	"strings"
-	"syscall"
 
+	"wheres-my-pizza/internal/config"
 	"wheres-my-pizza/internal/connections/database"
 	"wheres-my-pizza/internal/connections/rabbitmq"
+	"wheres-my-pizza/internal/microservices/order"
 )
 
-type Config struct {
-	Database database.Config
-	Rabbit   rabbitmq.Config
-}
-
 func main() {
-	var cfgPath string
-	flag.StringVar(&cfgPath, "config", "config.yml", "path to YAML config")
+	// Global flags
+	mode := flag.String("mode", "", "Service mode: order-service | kitchen-worker | tracking-service | notification-subscriber")
+	orderPort := flag.Int("port", 3000, "HTTP port for order-service")
+	orderMaxConcurrent := flag.Int("max-concurrent", 50, "Max concurrent orders")
+
+	// Kitchen Worker
+	workerName := flag.String("worker-name", "", "Unique worker name (required for kitchen-worker)")
+	orderTypes := flag.String("order-types", "", "Comma-separated order types (optional)")
+	heartbeat := flag.Int("heartbeat-interval", 30, "Heartbeat interval in seconds")
+	prefetch := flag.Int("prefetch", 1, "RabbitMQ prefetch count")
+
+	// Tracking Service
+	trackingPort := flag.Int("tracking-port", 3002, "HTTP port for tracking-service")
+
 	flag.Parse()
 
-	cfg, err := loadConfig(cfgPath)
+	// Load config
+	cfg, err := config.LoadConfig("config.yaml")
 	if err != nil {
-		log.Fatalf("config load error: %v", err)
+		log.Fatalf("Failed to load config: %v", err)
+	}
+	// Validate required flag
+	if *mode == "" {
+		fmt.Println("Error: --mode flag is required")
+		flag.Usage()
+		os.Exit(1)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// DB connect
-	dbPool, err := database.New(ctx, cfg.Database)
-	if err != nil {
-		log.Fatalf("db connect error: %v", err)
-	}
-	defer dbPool.Close()
-	if err := database.Ping(ctx, dbPool); err != nil {
-		log.Fatalf("db ping error: %v", err)
-	}
-	log.Printf("Postgres connected: %s:%d/%s", cfg.Database.Host, cfg.Database.Port, cfg.Database.Database)
-
-	// Rabbit connect
-	rmq, err := rabbitmq.Dial(cfg.Rabbit)
-	if err != nil {
-		log.Fatalf("rabbitmq connect error: %v", err)
-	}
-	defer rmq.Close()
-	if err := rmq.Ping(); err != nil {
-		log.Fatalf("rabbitmq ping error: %v", err)
-	}
-	log.Printf("RabbitMQ connected: %s:%d vhost=%q", cfg.Rabbit.Host, cfg.Rabbit.Port, cfg.Rabbit.VHost)
-
-	// graceful shutdown
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-
-	log.Println("server is up. press Ctrl+C to stop.")
-	<-sigCh
-	log.Println("shutdown signal received, exiting...")
-}
-
-// --- very small, purpose-built YAML reader for our simple config format ---
-// Supports top-level sections `database:` and `rabbitmq:` and their k:v pairs.
-func loadConfig(path string) (Config, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return Config{}, err
-	}
-	defer f.Close()
-
-	var (
-		cfg     Config
-		section string
-	)
-	// Defaults (optional)
-	cfg.Database.Port = 5432
-	cfg.Rabbit.Port = 5672
-	cfg.Rabbit.VHost = "/"
-	cfg.Database.SSLMode = "disable"
-	cfg.Database.MaxConns = 10
-
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
+	// Start selected service
+	switch *mode {
+	case "order-service":
+		ctx := context.Background()
+		fmt.Printf("Starting Order Service on port %d (max concurrent = %d)\n", *orderPort, *orderMaxConcurrent)
+		db, err := database.ConnectDB(ctx, cfg.Database)
+		if err != nil {
+			log.Fatalf("Database connection failed: %v", err)
 		}
-		// section?
-		if strings.HasSuffix(line, ":") && !strings.Contains(line, " ") {
-			section = strings.TrimSuffix(line, ":")
-			continue
+		defer db.Close()
+		rmqClient, err := rabbitmq.Dial(cfg.RabbitMQ)
+		if err != nil {
+			log.Fatalf("RabbitMQ connection failed: %v", err)
 		}
-		// key: value
-		kv := strings.SplitN(line, ":", 2)
-		if len(kv) != 2 {
-			continue
+		defer rmqClient.Close()
+		order.Run(fmt.Sprintf("%d", *orderPort), *orderMaxConcurrent, db, rmqClient)
+
+	case "kitchen-worker":
+		if *workerName == "" {
+			log.Fatal("Error: --worker-name flag is required for kitchen-worker")
 		}
-		key := strings.TrimSpace(kv[0])
-		val := strings.TrimSpace(kv[1])
-		val = strings.Trim(val, `"'`)
+		fmt.Printf("Starting Kitchen Worker: %s (types = %s, prefetch = %d, heartbeat = %d)\n",
+			*workerName, *orderTypes, *prefetch, *heartbeat)
+		// TODO: init DB + RabbitMQ consumer
+		_ = cfg
 
-		switch section {
-		case "database":
-			switch key {
-			case "host":
-				cfg.Database.Host = val
-			case "port":
-				cfg.Database.Port = atoi(val, 5432)
-			case "user":
-				cfg.Database.User = val
-			case "password":
-				cfg.Database.Password = val
-			case "database":
-				cfg.Database.Database = val
-			case "sslmode":
-				if val != "" {
-					cfg.Database.SSLMode = val
-				}
-			case "max_conns":
-				cfg.Database.MaxConns = atoi(val, 10)
-			}
-		case "rabbitmq":
-			switch key {
-			case "host":
-				cfg.Rabbit.Host = val
-			case "port":
-				cfg.Rabbit.Port = atoi(val, 5672)
-			case "user":
-				cfg.Rabbit.User = val
-			case "password":
-				cfg.Rabbit.Password = val
-			case "vhost":
-				if val != "" {
-					cfg.Rabbit.VHost = val
-				}
-			}
-		}
-	}
-	if err := sc.Err(); err != nil {
-		return Config{}, err
-	}
+	case "tracking-service":
+		fmt.Printf("Starting Tracking Service on port %d\n", *trackingPort)
+		// TODO: init DB + HTTP server
+		_ = cfg
 
-	// Basic validation
-	if cfg.Database.Host == "" || cfg.Database.User == "" || cfg.Database.Database == "" {
-		return Config{}, fmt.Errorf("database config incomplete")
-	}
-	if cfg.Rabbit.Host == "" || cfg.Rabbit.User == "" {
-		return Config{}, fmt.Errorf("rabbitmq config incomplete")
-	}
-	return cfg, nil
-}
+	case "notification-subscriber":
+		fmt.Println("Starting Notification Subscriber")
+		// TODO: init RabbitMQ consumer
+		_ = cfg
 
-func atoi(s string, def int) int {
-	if s == "" {
-		return def
+	default:
+		fmt.Printf("Unknown mode: %s\n", *mode)
+		flag.Usage()
+		os.Exit(1)
 	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return def
-	}
-	return n
 }

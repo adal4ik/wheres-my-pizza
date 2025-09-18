@@ -2,61 +2,57 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"wheres-my-pizza/internal/config"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-type Config struct {
-	Host     string
-	Port     int
-	User     string
-	Password string
-	Database string
-	SSLMode  string // disable (default) / require / verify-full
-	MaxConns int    // pool size (default 10)
-}
+func ConnectDB(ctx context.Context, cfg config.DatabaseConfig) (*sql.DB, error) {
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.Database)
 
-func dsn(cfg Config) string {
-	ssl := cfg.SSLMode
-	if ssl == "" {
-		ssl = "disable"
-	}
-	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
-		cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.Database, ssl)
-}
+	const (
+		maxRetries = 10
+		retryDelay = 2 * time.Second
+		pingTTL    = 5 * time.Second
+	)
 
-// New opens a pgx pool and returns it after a successful ping.
-func New(ctx context.Context, cfg Config) (*pgxpool.Pool, error) {
-	pcfg, err := pgxpool.ParseConfig(dsn(cfg))
-	if err != nil {
-		return nil, err
-	}
-	if cfg.MaxConns > 0 {
-		pcfg.MaxConns = int32(cfg.MaxConns)
-	}
-	pcfg.MinConns = 0
-	pcfg.HealthCheckPeriod = 30 * time.Second
-	pcfg.MaxConnIdleTime = 5 * time.Minute
-	pcfg.MaxConnLifetime = 0
+	var db *sql.DB
+	var err error
 
-	pool, err := pgxpool.NewWithConfig(ctx, pcfg)
-	if err != nil {
-		return nil, err
+	for i := 1; i <= maxRetries; i++ {
+		// открываем соединение
+		db, err = sql.Open("pgx", dsn)
+		if err != nil {
+			// ждём и пробуем снова
+			select {
+			case <-time.After(retryDelay):
+				continue
+			case <-ctx.Done():
+				return nil, fmt.Errorf("db open canceled: %w", ctx.Err())
+			}
+		}
+
+		pctx, cancel := context.WithTimeout(ctx, pingTTL)
+		err = db.PingContext(pctx)
+		cancel()
+		if err == nil {
+			return db, nil
+		}
+
+		_ = db.Close()
+
+		select {
+		case <-time.After(retryDelay):
+			continue
+		case <-ctx.Done():
+			return nil, fmt.Errorf("db ping canceled: %w", ctx.Err())
+		}
 	}
 
-	ctxPing, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if err := pool.Ping(ctxPing); err != nil {
-		pool.Close()
-		return nil, err
-	}
-	return pool, nil
-}
-
-func Ping(ctx context.Context, pool *pgxpool.Pool) error {
-	ctxPing, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	return pool.Ping(ctxPing)
+	return nil, fmt.Errorf("database unreachable after %d attempts: %w", maxRetries, err)
 }

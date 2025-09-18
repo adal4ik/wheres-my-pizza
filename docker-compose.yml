@@ -16,8 +16,8 @@ services:
     image: rabbitmq:3.13-management
     container_name: pizza-rabbit
     environment:
-      RABBITMQ_DEFAULT_USER: pizza
-      RABBITMQ_DEFAULT_PASS: pizza
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
       RABBITMQ_MANAGEMENT_LOAD_DEFINITIONS: /etc/rabbitmq/definitions.json
     ports:
       - "5672:5672"   

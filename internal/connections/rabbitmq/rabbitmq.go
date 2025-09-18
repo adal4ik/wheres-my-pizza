@@ -2,30 +2,22 @@ package rabbitmq
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
+	"wheres-my-pizza/internal/config"
+
 	amqp "github.com/rabbitmq/amqp091-go"
 )
-
-type Config struct {
-	Host     string
-	Port     int
-	User     string
-	Password string
-	VHost    string // default "/"
-	UseTLS   bool   // optional
-}
 
 type Client struct {
 	conn *amqp.Connection
 	ch   *amqp.Channel
 
-	acks <-chan amqp.Confirmation // для publisher confirms
-	mu   sync.Mutex               // сериализуем Publish при использовании confirms
+	acks <-chan amqp.Confirmation
+	mu   sync.Mutex
 }
 
 func (c *Client) Channel() *amqp.Channel { return c.ch }
@@ -39,14 +31,11 @@ func (c *Client) Close() {
 	}
 }
 
-func Dial(cfg Config) (*Client, error) {
+func Dial(cfg config.RabbitMQConfig) (*Client, error) {
 	if cfg.VHost == "" {
 		cfg.VHost = "/"
 	}
 	scheme := "amqp"
-	if cfg.UseTLS {
-		scheme = "amqps"
-	}
 	url := fmt.Sprintf("%s://%s:%s@%s:%d/%s",
 		scheme, cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.VHost)
 
@@ -54,11 +43,7 @@ func Dial(cfg Config) (*Client, error) {
 		conn *amqp.Connection
 		err  error
 	)
-	if cfg.UseTLS {
-		conn, err = amqp.DialTLS(url, &tls.Config{MinVersion: tls.VersionTLS12})
-	} else {
-		conn, err = amqp.Dial(url)
-	}
+	conn, err = amqp.Dial(url)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +54,6 @@ func Dial(cfg Config) (*Client, error) {
 		return nil, err
 	}
 
-	// Включаем publisher confirms и подписываемся на подтверждения
 	if err := ch.Confirm(false); err != nil {
 		_ = ch.Close()
 		_ = conn.Close()
@@ -80,7 +64,6 @@ func Dial(cfg Config) (*Client, error) {
 	return &Client{conn: conn, ch: ch, acks: acks}, nil
 }
 
-// Лёгкая health-проверка соединения
 func (c *Client) Ping() error {
 	if c.conn == nil || c.conn.IsClosed() {
 		return errors.New("rabbitmq connection is closed")
@@ -88,11 +71,9 @@ func (c *Client) Ping() error {
 	return nil
 }
 
-// Publish публикует сообщение и ждёт ack/nack от брокера.
-// Не вызывает горутинно одновременно (сериализуется mutex-ом).
 func (c *Client) Publish(ctx context.Context, exchange, key string,
-	body []byte, headers amqp.Table, contentType string, persistent bool) error {
-
+	body []byte, headers amqp.Table, contentType string, persistent bool,
+) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -118,7 +99,6 @@ func (c *Client) Publish(ctx context.Context, exchange, key string,
 		return err
 	}
 
-	// ждём publisher confirm или отмену контекста
 	select {
 	case conf := <-c.acks:
 		if conf.Ack {

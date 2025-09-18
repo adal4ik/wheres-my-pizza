@@ -2,50 +2,130 @@ package rabbitmq
 
 import (
 	"context"
+	"crypto/tls"
+	"errors"
 	"fmt"
+	"sync"
+	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-type RabbitClient struct {
-	// The connection used by the client
+type Config struct {
+	Host     string
+	Port     int
+	User     string
+	Password string
+	VHost    string // default "/"
+	UseTLS   bool   // optional
+}
+
+type Client struct {
 	conn *amqp.Connection
-	// Channel is used to process/send messages
-	ch *amqp.Channel
+	ch   *amqp.Channel
+
+	acks <-chan amqp.Confirmation // для publisher confirms
+	mu   sync.Mutex               // сериализуем Publish при использовании confirms
 }
 
-func ConnectRabbitMQ(username, password, host, vhost string) (*amqp.Connection, error) {
-	return amqp.Dial(fmt.Sprintf("amqp://%s:%s@%s/%s", username, password, host, vhost))
+func (c *Client) Channel() *amqp.Channel { return c.ch }
+
+func (c *Client) Close() {
+	if c.ch != nil {
+		_ = c.ch.Close()
+	}
+	if c.conn != nil {
+		_ = c.conn.Close()
+	}
 }
 
-func NewRabbitMQClient(conn *amqp.Connection) (RabbitClient, error) {
+func Dial(cfg Config) (*Client, error) {
+	if cfg.VHost == "" {
+		cfg.VHost = "/"
+	}
+	scheme := "amqp"
+	if cfg.UseTLS {
+		scheme = "amqps"
+	}
+	url := fmt.Sprintf("%s://%s:%s@%s:%d/%s",
+		scheme, cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.VHost)
+
+	var (
+		conn *amqp.Connection
+		err  error
+	)
+	if cfg.UseTLS {
+		conn, err = amqp.DialTLS(url, &tls.Config{MinVersion: tls.VersionTLS12})
+	} else {
+		conn, err = amqp.Dial(url)
+	}
+	if err != nil {
+		return nil, err
+	}
+
 	ch, err := conn.Channel()
 	if err != nil {
-		return RabbitClient{}, err
+		_ = conn.Close()
+		return nil, err
 	}
-	return RabbitClient{
-		conn: conn,
-		ch:   ch,
-	}, nil
+
+	// Включаем publisher confirms и подписываемся на подтверждения
+	if err := ch.Confirm(false); err != nil {
+		_ = ch.Close()
+		_ = conn.Close()
+		return nil, err
+	}
+	acks := ch.NotifyPublish(make(chan amqp.Confirmation, 1))
+
+	return &Client{conn: conn, ch: ch, acks: acks}, nil
 }
 
-func (rc RabbitClient) Close() error {
-	return rc.ch.Close()
+// Лёгкая health-проверка соединения
+func (c *Client) Ping() error {
+	if c.conn == nil || c.conn.IsClosed() {
+		return errors.New("rabbitmq connection is closed")
+	}
+	return nil
 }
 
-func (rc RabbitClient) CreateQueue(queueName string, durable, autodelete bool) error {
-	_, err := rc.ch.QueueDeclare(queueName, durable, autodelete, false, false, nil)
-	return err
-}
+// Publish публикует сообщение и ждёт ack/nack от брокера.
+// Не вызывает горутинно одновременно (сериализуется mutex-ом).
+func (c *Client) Publish(ctx context.Context, exchange, key string,
+	body []byte, headers amqp.Table, contentType string, persistent bool) error {
 
-func (rc RabbitClient) CreateBinding(name, binding, exchange string) error {
-	return rc.ch.QueueBind(name, binding, exchange, false, nil)
-}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-func (rc RabbitClient) Send(ctx context.Context, exchange, routingKey string, options amqp.Publishing) error {
-	return rc.ch.PublishWithContext(ctx, exchange, routingKey, true, false, options)
-}
+	mode := amqp.Transient
+	if persistent {
+		mode = amqp.Persistent
+	}
 
-func (rc RabbitClient) Consume(queue, consumer string, autoAck bool) (<-chan amqp.Delivery, error) {
-	return rc.ch.Consume(queue, consumer, autoAck, false, false, false, nil)
+	if err := c.ch.PublishWithContext(
+		ctx,
+		exchange,
+		key,
+		false, // mandatory
+		false, // immediate
+		amqp.Publishing{
+			DeliveryMode: mode,
+			ContentType:  contentType,
+			Timestamp:    time.Now(),
+			Headers:      headers,
+			Body:         body,
+		},
+	); err != nil {
+		return err
+	}
+
+	// ждём publisher confirm или отмену контекста
+	select {
+	case conf := <-c.acks:
+		if conf.Ack {
+			return nil
+		}
+		return errors.New("publish NACK from broker")
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

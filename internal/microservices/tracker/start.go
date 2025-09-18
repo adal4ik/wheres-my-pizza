@@ -3,6 +3,7 @@ package tracker
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,23 +13,12 @@ import (
 	"wheres-my-pizza/internal/microservices/tracker/handler"
 	"wheres-my-pizza/internal/microservices/tracker/repository"
 	"wheres-my-pizza/internal/microservices/tracker/service"
-
-	_ "github.com/jackc/pgx/v5/stdlib" // ВАЖНО: stdlib-адаптер
 )
 
-func Start() {
-	httpAddr := ":8082"
-	dsn := "postgres://restaurant_user:restaurant_pass@localhost:5431/restaurant_db?sslmode=disable"
-
-	// ВАЖНО: драйвер "pgx", не "postgres"
-	db, err := sql.Open("pgx", dsn)
-	if err != nil {
-		panic(err)
-	}
-	if err := db.Ping(); err != nil {
-		panic(err)
-	}
-
+// Start запускает HTTP-сервер трекинга на addr, используя уже открытый db.
+// Блокирует горутину до shutdown. Возвращает ошибку только при фатальном старте/стопе.
+func Start(addr string, db *sql.DB) error {
+	fmt.Println("asd")
 	repo := repository.NewTrackerRepo(db)
 	svc := service.NewTrackerService(repo)
 	h := &handler.Handler{TrackerHandler: handler.NewTrackerHandler(svc)}
@@ -36,25 +26,35 @@ func Start() {
 	mux := handler.Router(h)
 
 	srv := &http.Server{
-		Addr:         httpAddr,
+		Addr:         addr,
 		Handler:      mux,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
 
+	// run
+	errCh := make(chan error, 1)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			panic(err)
+			errCh <- err
 		}
 	}()
 
+	// graceful shutdown по сигналам
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	<-stop
+
+	select {
+	case sig := <-stop:
+		_ = sig // логируй при желании
+	case err := <-errCh:
+		return err
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(ctx)
-	_ = db.Close()
+
+	return nil
 }

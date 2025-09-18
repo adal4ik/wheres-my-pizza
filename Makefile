@@ -95,7 +95,7 @@ test:
 ##### Migrations (golang-migrate в docker) #####
 
 migrate-up:
-	docker run --rm -v "$(PWD)/$(MIGRATIONS_DIR):/migrations:ro" \
+	docker run --rm -v "$(PWD)/$(MIGRATIONS_DIR):/migrations:ro,Z" \
 		--network host $(MIGRATE_IMG) \
 		-path=/migrations -database "$(POSTGRES_DSN)" up
 

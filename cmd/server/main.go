@@ -71,14 +71,18 @@ func main() {
 
 	case "tracking-service":
 		fmt.Printf("Starting Tracking Service on port %d\n", *trackingPort)
+
 		ctx := context.Background()
-		fmt.Printf("Starting Order Service on port %d (max concurrent = %d)\n", *orderPort, *orderMaxConcurrent)
-		db, err := database.ConnectDB(ctx, cfg.Database)
+		db, err := database.ConnectDB(ctx, cfg.Database) // уже есть в твоём коде
 		if err != nil {
 			log.Fatalf("Database connection failed: %v", err)
 		}
 		defer db.Close()
-		tracker.Start()
+
+		addr := fmt.Sprintf(":%d", *trackingPort)
+		if err := tracker.Start(addr, db); err != nil {
+			log.Fatalf("Tracking service failed: %v", err)
+		}
 	case "notification-subscriber":
 		fmt.Println("Starting Notification Subscriber")
 		// TODO: init RabbitMQ consumer

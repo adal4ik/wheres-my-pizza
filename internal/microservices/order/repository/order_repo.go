@@ -67,7 +67,7 @@ func (or *OrderRepository) AddOrder(order dao.Order) error {
 
 	// 3. Insert into order_status_log
 	_, err = tx.Exec(`
-		INSERT INTO order_status_log (order_id, status, updated_at)
+		INSERT INTO order_status_log (order_id, status, changed_at)
 		VALUES ($1, $2, NOW())
 	`, orderID, order.Status)
 	if err != nil {

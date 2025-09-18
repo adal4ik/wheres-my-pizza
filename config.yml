@@ -4,7 +4,7 @@ database:
   port: 5431
   user: restaurant_user
   password: restaurant_pass
-  database: restaurant_db
+  database: pizza
 
 # RabbitMQ Configuration
 rabbitmq:

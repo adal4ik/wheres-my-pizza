@@ -32,7 +32,7 @@ func main() {
 	flag.Parse()
 
 	// Load config
-	cfg, err := config.LoadConfig("config.yaml")
+	cfg, err := config.LoadConfig("config.yml")
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}

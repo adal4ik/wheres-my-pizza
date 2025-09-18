@@ -1,0 +1,56 @@
+{
+    "rabbit_version": "3.13.0",
+    "users": [
+      {
+        "name": "guest",
+        "password_hash": "guest",
+        "hashing_algorithm": "rabbit_password_hashing_sha256",
+        "tags": "administrator"
+      }
+    ],
+    "vhosts": [
+      { "name": "/" }
+    ],
+    "permissions": [
+      {
+        "user": "guest",
+        "vhost": "/",
+        "configure": ".*",
+        "write": ".*",
+        "read": ".*"
+      }
+    ],
+    "exchanges": [
+      {
+        "name": "orders_topic",
+        "vhost": "/",
+        "type": "topic",
+        "durable": true,
+        "auto_delete": false,
+        "internal": false,
+        "arguments": {}
+      }
+    ],
+    "queues": [
+      {
+        "name": "orders_queue",
+        "vhost": "/",
+        "durable": true,
+        "auto_delete": false,
+        "arguments": {
+          "x-max-priority": 10
+        }
+      }
+    ],
+    "bindings": [
+      {
+        "source": "orders_topic",
+        "vhost": "/",
+        "destination": "orders_queue",
+        "destination_type": "queue",
+        "routing_key": "kitchen.*.*",
+        "arguments": {}
+      }
+    ]
+  }
+  

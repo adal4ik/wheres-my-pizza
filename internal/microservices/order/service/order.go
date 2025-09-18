@@ -98,16 +98,18 @@ func (or *OrderService) AddOrder(req dto.CreateOrderRequest) (dto.CreateOrderRes
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	if err := or.rmqClient.Publish(
-		ctx,
-		"orders-exchange", // TODO: взять из конфигурации
-		"orders.new",      // routing key
-		body,
-		nil,                // headers (можно добавить priority)
-		"application/json", // content type
-		true,               // persistent
-	); err != nil {
+	routingKey := fmt.Sprintf("kitchen.%s.%d", req.OrderType, priority)
+	err = or.rmqClient.Publish(ctx, "orders_topic", routingKey, body, nil, "application/json", true)
+	// if err := or.rmqClient.Publish(
+	// 	ctx,
+	// 	"orders-exchange", // TODO: взять из конфигурации
+	// 	"orders.new",      // routing key
+	// 	body,
+	// 	nil,                // headers (можно добавить priority)
+	// 	"application/json", // content type
+	// 	true,               // persistent
+	// );
+	if err != nil {
 		return domain.CreateOrderResponse{}, fmt.Errorf("failed to publish order: %w", err)
 	}
 

@@ -10,7 +10,7 @@ COMPOSE        ?= docker compose
 PWD            := $(shell pwd)
 
 # DSN для migrate (совпадает с docker-compose.yml из нашей переписки)
-POSTGRES_DSN   ?= postgres://postgres:postgres@localhost:5432/pizza?sslmode=disable
+POSTGRES_DSN ?= postgres://restaurant_user:restaurant_pass@localhost:5431/pizza?sslmode=disable
 AMQP_URL       ?= amqp://pizza:pizza@localhost:5672/
 MIGRATIONS_DIR ?= ./migrations
 MIGRATE_IMG    ?= migrate/migrate

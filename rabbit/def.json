@@ -1,56 +1,104 @@
 {
-    "rabbit_version": "3.13.0",
-    "users": [
-      {
-        "name": "guest",
-        "password_hash": "guest",
-        "hashing_algorithm": "rabbit_password_hashing_sha256",
-        "tags": "administrator"
+  "users": [
+    { "name": "guest", "password": "guest", "tags": "administrator" }
+  ],
+  "vhosts": [
+    { "name": "/" }
+  ],
+  "permissions": [
+    { "user": "guest", "vhost": "/", "configure": ".*", "write": ".*", "read": ".*" }
+  ],
+  "exchanges": [
+    {
+      "name": "orders_topic",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "dlx",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    { 
+      "name":"notifications_fanout",
+      "vhost":"/",
+      "type":"fanout",
+      "durable":true,
+      "auto_delete":false,
+      "internal":false,
+      "arguments":{} 
+    }
+
+  ],
+  "queues": [
+    { 
+      "name": "notifications_queue", 
+      "vhost": "/", 
+      "durable": true, 
+      "auto_delete": false, 
+      "arguments": {}},
+    {
+      "name": "orders_queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-max-priority": 10,
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "orders_queue"
       }
-    ],
-    "vhosts": [
-      { "name": "/" }
-    ],
-    "permissions": [
-      {
-        "user": "guest",
-        "vhost": "/",
-        "configure": ".*",
-        "write": ".*",
-        "read": ".*"
+    },
+    {
+      "name": "kitchen.retry.q",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 15000,
+        "x-dead-letter-exchange": "orders_topic",
+        "x-dead-letter-routing-key": "kitchen.retry"
       }
-    ],
-    "exchanges": [
-      {
-        "name": "orders_topic",
-        "vhost": "/",
-        "type": "topic",
-        "durable": true,
-        "auto_delete": false,
-        "internal": false,
-        "arguments": {}
-      }
-    ],
-    "queues": [
-      {
-        "name": "orders_queue",
-        "vhost": "/",
-        "durable": true,
-        "auto_delete": false,
-        "arguments": {
-          "x-max-priority": 10
-        }
-      }
-    ],
-    "bindings": [
-      {
-        "source": "orders_topic",
-        "vhost": "/",
-        "destination": "orders_queue",
-        "destination_type": "queue",
-        "routing_key": "kitchen.*.*",
-        "arguments": {}
-      }
-    ]
-  }
-  
+    },
+    {
+      "name": "orders_queue.dlq",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    }
+  ],
+  "bindings": [
+    {
+      "source": "orders_topic",
+      "vhost": "/",
+      "destination": "orders_queue",
+      "destination_type": "queue",
+      "routing_key": "kitchen.*.*",
+      "arguments": {}
+    },
+    {
+      "source": "orders_topic",
+      "vhost": "/",
+      "destination": "orders_queue",
+      "destination_type": "queue",
+      "routing_key": "kitchen.retry",
+      "arguments": {}
+    },
+    {
+      "source": "dlx",
+      "vhost": "/",
+      "destination": "orders_queue.dlq",
+      "destination_type": "queue",
+      "routing_key": "orders_queue",
+      "arguments": {}
+    }
+  ]
+}

@@ -49,10 +49,12 @@ VALUES ($1,$2,$3,$4)
 func (r *TrackerRepo) GetOrderView(ctx context.Context, id string) (models.OrderView, bool, error) {
 	var v models.OrderView
 	var status string
+	// Processed by
+	// Not lasteventat but  "estimated_completion"
 	err := r.db.QueryRowContext(ctx, `
-SELECT order_id, status, updated_at, COALESCE(customer_name,''), last_event_at
-FROM orders_view WHERE order_id=$1
-`, id).Scan(&v.OrderID, &status, &v.UpdatedAt, &v.CustomerName, &v.LastEventAt)
+SELECT order_number, status, updated_at, created_at +  (20 * interval '1 minute')
+FROM orders WHERE order_number=$1
+`, id).Scan(&v.OrderID, &status, &v.UpdatedAt, &v.LastEventAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return models.OrderView{}, false, nil
 	}

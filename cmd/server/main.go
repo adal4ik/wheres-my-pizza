@@ -10,6 +10,7 @@ import (
 	"wheres-my-pizza/internal/config"
 	"wheres-my-pizza/internal/connections/database"
 	"wheres-my-pizza/internal/connections/rabbitmq"
+	"wheres-my-pizza/internal/microservices/kitchen"
 	"wheres-my-pizza/internal/microservices/order"
 	"wheres-my-pizza/internal/microservices/tracker"
 )
@@ -22,7 +23,7 @@ func main() {
 
 	// Kitchen Worker
 	workerName := flag.String("worker-name", "", "Unique worker name (required for kitchen-worker)")
-	orderTypes := flag.String("order-types", "", "Comma-separated order types (optional)")
+	orderTypes := flag.String("order-types", "general", "Comma-separated order types (optional)")
 	heartbeat := flag.Int("heartbeat-interval", 30, "Heartbeat interval in seconds")
 	prefetch := flag.Int("prefetch", 1, "RabbitMQ prefetch count")
 
@@ -67,7 +68,19 @@ func main() {
 		fmt.Printf("Starting Kitchen Worker: %s (types = %s, prefetch = %d, heartbeat = %d)\n",
 			*workerName, *orderTypes, *prefetch, *heartbeat)
 		// TODO: init DB + RabbitMQ consumer
-		_ = cfg
+		ctx := context.Background()
+		fmt.Printf("Starting Order Service on port %d (max concurrent = %d)\n", *orderPort, *orderMaxConcurrent)
+		db, err := database.ConnectDB(ctx, cfg.Database)
+		if err != nil {
+			log.Fatalf("Database connection failed: %v", err)
+		}
+		defer db.Close()
+		rmqClient, err := rabbitmq.Dial(cfg.RabbitMQ)
+		if err != nil {
+			log.Fatalf("RabbitMQ connection failed: %v", err)
+		}
+		defer rmqClient.Close()
+		kitchen.Run(context.Background(), db, rmqClient, *workerName, *orderTypes, *prefetch, *heartbeat)
 
 	case "tracking-service":
 		fmt.Printf("Starting Tracking Service on port %d\n", *trackingPort)

@@ -9,9 +9,10 @@ import (
 
 	"wheres-my-pizza/internal/connections/rabbitmq"
 	dao "wheres-my-pizza/internal/microservices/order/domain/dao"
-	domain "wheres-my-pizza/internal/microservices/order/domain/dto"
 	dto "wheres-my-pizza/internal/microservices/order/domain/dto"
 	"wheres-my-pizza/internal/microservices/order/repository"
+
+	"github.com/rabbitmq/amqp091-go"
 )
 
 type OrderServiceInterface interface {
@@ -60,7 +61,10 @@ func (or *OrderService) AddOrder(req dto.CreateOrderRequest) (dto.CreateOrderRes
 	}
 	// 3. Generate order number (ORD_YYYYMMDD_NNN)
 	today := time.Now().UTC().Format("20060102")
-	sequence := 1 // TODO: get from DB sequence in transaction
+	sequence, err := or.db.GetOrderCount()
+	if err != nil {
+		return dto.CreateOrderResponse{}, fmt.Errorf("failed to get order count: %w", err)
+	}
 	orderNumber := fmt.Sprintf("ORD_%s_%03d", today, sequence)
 
 	// 4. Save order in database
@@ -90,27 +94,38 @@ func (or *OrderService) AddOrder(req dto.CreateOrderRequest) (dto.CreateOrderRes
 		DeliveryAddress: order.DeliveryAddr,
 		TableNumber:     order.TableNumber,
 	}
-	// 5. Publish to RabbitMQ
 	body, err := json.Marshal(msg)
 	if err != nil {
-		return domain.CreateOrderResponse{}, fmt.Errorf("failed to marshal order message: %w", err)
+		return dto.CreateOrderResponse{}, fmt.Errorf("failed to marshal order message: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
 	routingKey := fmt.Sprintf("kitchen.%s.%d", req.OrderType, priority)
-	err = or.rmqClient.Publish(ctx, "orders_topic", routingKey, body, nil, "application/json", true)
-	// if err := or.rmqClient.Publish(
-	// 	ctx,
-	// 	"orders-exchange", // TODO: взять из конфигурации
-	// 	"orders.new",      // routing key
-	// 	body,
-	// 	nil,                // headers (можно добавить priority)
-	// 	"application/json", // content type
-	// 	true,               // persistent
-	// );
-	if err != nil {
-		return domain.CreateOrderResponse{}, fmt.Errorf("failed to publish order: %w", err)
+
+	pub := amqp091.Publishing{
+		DeliveryMode:  amqp091.Persistent, // persist to disk
+		ContentType:   "application/json",
+		Body:          body,
+		MessageId:     fmt.Sprintf("%d", time.Now().UnixNano()),
+		CorrelationId: orderNumber, // удобно трекать по номеру
+		Timestamp:     time.Now().UTC(),
+		Priority:      uint8(priority), // задействуем x-max-priority очереди
+		Headers: amqp091.Table{
+			"x-source": "order-service",
+		},
+	}
+
+	if err := or.rmqClient.Channel().PublishWithContext(
+		ctx,
+		"orders_topic",
+		routingKey,
+		false, // mandatory
+		false, // immediate
+		pub,
+	); err != nil {
+		return dto.CreateOrderResponse{}, fmt.Errorf("failed to publish order: %w", err)
 	}
 
 	// 6. Build response

@@ -11,6 +11,6 @@ type Service struct {
 
 func New(db repository.Repository, rmqClient rabbitmq.Client) *Service {
 	return &Service{
-		OrderService: NewKitchenService(db.KitchenRepo, rmqClient),
+		OrderService: NewKitchenService(db.KitchenRepo, rmqClient, "", "general", 1, 30),
 	}
 }

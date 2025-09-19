@@ -9,6 +9,7 @@ import (
 
 type OrderRepositoryInterface interface {
 	AddOrder(order dao.Order) error
+	GetOrderCount() (int, error)
 }
 
 type OrderRepository struct {
@@ -17,6 +18,14 @@ type OrderRepository struct {
 
 func NewOrderRepository(db *sql.DB) OrderRepositoryInterface {
 	return &OrderRepository{db: db}
+}
+func (or *OrderRepository) GetOrderCount() (int, error) {
+	var count int
+	err := or.db.QueryRow("SELECT COUNT(*) FROM orders").Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get order count: %w", err)
+	}
+	return count, nil
 }
 
 func (or *OrderRepository) AddOrder(order dao.Order) error {
@@ -67,9 +76,9 @@ func (or *OrderRepository) AddOrder(order dao.Order) error {
 
 	// 3. Insert into order_status_log
 	_, err = tx.Exec(`
-		INSERT INTO order_status_log (order_id, status, changed_at)
-		VALUES ($1, $2, NOW())
-	`, orderID, order.Status)
+	INSERT INTO order_status_log (order_id, status, changed_by, changed_at)
+	VALUES ($1, $2, 'order-service', NOW())
+`, orderID, order.Status)
 	if err != nil {
 		return fmt.Errorf("failed to insert order status log: %w", err)
 	}

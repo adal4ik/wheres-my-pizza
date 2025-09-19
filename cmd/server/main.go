@@ -13,6 +13,7 @@ import (
 	"wheres-my-pizza/internal/connections/database"
 	"wheres-my-pizza/internal/connections/rabbitmq"
 	"wheres-my-pizza/internal/microservices/kitchen"
+	"wheres-my-pizza/internal/microservices/notificator"
 	"wheres-my-pizza/internal/microservices/order"
 	"wheres-my-pizza/internal/microservices/tracker"
 )
@@ -101,8 +102,14 @@ func main() {
 		}
 
 	case "notification-subscriber":
-		log.Println("Starting Notification Subscriber (TODO)")
-		// инициализация подписчика на notifications_fanout при необходимости
+		fmt.Println("Starting Notification Subscriber")
+		ctx := context.Background()
+		rmqClient, err := rabbitmq.Dial(cfg.RabbitMQ)
+		if err != nil {
+			log.Fatalf("RabbitMQ connection failed: %v", err)
+		}
+		defer rmqClient.Close()
+		notificator.Start(ctx, rmqClient)
 
 	default:
 		log.Fatalf("Unknown mode: %s", *mode)

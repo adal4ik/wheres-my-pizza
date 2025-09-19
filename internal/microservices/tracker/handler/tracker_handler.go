@@ -33,14 +33,21 @@ func (h *TrackerHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 
 func (h *TrackerHandler) GetTimeline(w http.ResponseWriter, r *http.Request) {
 	id := param(r, "order_id")
-	limit := atoiDefault(r.URL.Query().Get("limit"), 50)
-	offset := atoiDefault(r.URL.Query().Get("offset"), 0)
-	events, err := h.service.GetOrderTimeline(r.Context(), id, limit, offset)
+	events, err := h.service.GetOrderTimeline(r.Context(), id)
 	if err != nil {
 		writeProblem(w, http.StatusInternalServerError, "db_error", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"order_id": id, "events": events})
+}
+
+func (h *TrackerHandler) GetWorkersStatus(w http.ResponseWriter, r *http.Request) {
+	ws, err := h.service.GetWorkersStatus(r.Context())
+	if err != nil {
+		writeProblem(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, ws)
 }
 
 // writeJSON — отдаёт JSON с нужным статусом

@@ -14,16 +14,23 @@ const (
 )
 
 type OrderEvent struct {
-	OrderID    string         // "abc-123"
-	EventType  string         // "order.created", "kitchen.ready", ...
-	Payload    map[string]any // детали
-	OccurredAt time.Time      // из сообщения
+	OrderID    string         // order_number
+	EventType  string         // e.g. "status.ACCEPTED"
+	Payload    map[string]any // arbitrary details
+	OccurredAt time.Time
 }
 
 type OrderView struct {
-	OrderID      string
-	Status       OrderStatus
-	UpdatedAt    time.Time
-	CustomerName string
-	LastEventAt  time.Time
+	OrderID             string      // order_number
+	Status              OrderStatus // mapped from orders.status
+	UpdatedAt           time.Time   // orders.updated_at
+	CustomerName        string      // orders.customer_name
+	EstimatedCompletion time.Time   // created_at + 20m
+}
+
+type WorkerStatus struct {
+	WorkerName      string    `json:"worker_name"`
+	Status          string    `json:"status"` // "online" | "offline"
+	OrdersProcessed int       `json:"orders_processed"`
+	LastSeen        time.Time `json:"last_seen"`
 }

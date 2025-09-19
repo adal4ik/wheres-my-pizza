@@ -105,7 +105,7 @@ func main() {
 			log.Fatalf("RabbitMQ connection failed: %v", err)
 		}
 		defer rmqClient.Close()
-		notificator.Start(ctx, "8080", rmqClient)
+		notificator.Start(ctx, rmqClient)
 
 	default:
 		fmt.Printf("Unknown mode: %s\n", *mode)

@@ -3,7 +3,6 @@ package tracker
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,7 +17,6 @@ import (
 // Start запускает HTTP-сервер трекинга на addr, используя уже открытый db.
 // Блокирует горутину до shutdown. Возвращает ошибку только при фатальном старте/стопе.
 func Start(addr string, db *sql.DB) error {
-	fmt.Println("asd")
 	repo := repository.NewTrackerRepo(db)
 	svc := service.NewTrackerService(repo)
 	h := &handler.Handler{TrackerHandler: handler.NewTrackerHandler(svc)}

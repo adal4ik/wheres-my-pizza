@@ -2,103 +2,49 @@
   "users": [
     { "name": "guest", "password": "guest", "tags": "administrator" }
   ],
-  "vhosts": [
-    { "name": "/" }
-  ],
+  "vhosts": [{ "name": "/" }],
   "permissions": [
     { "user": "guest", "vhost": "/", "configure": ".*", "write": ".*", "read": ".*" }
   ],
   "exchanges": [
-    {
-      "name": "orders_topic",
-      "vhost": "/",
-      "type": "topic",
-      "durable": true,
-      "auto_delete": false,
-      "internal": false,
-      "arguments": {}
-    },
-    {
-      "name": "dlx",
-      "vhost": "/",
-      "type": "direct",
-      "durable": true,
-      "auto_delete": false,
-      "internal": false,
-      "arguments": {}
-    },
-    { 
-      "name":"notifications_fanout",
-      "vhost":"/",
-      "type":"fanout",
-      "durable":true,
-      "auto_delete":false,
-      "internal":false,
-      "arguments":{} 
-    }
-
+    { "name": "orders_topic", "vhost": "/", "type": "topic", "durable": true, "auto_delete": false, "internal": false, "arguments": {} },
+    { "name": "dlx", "vhost": "/", "type": "direct", "durable": true, "auto_delete": false, "internal": false, "arguments": {} },
+    { "name": "notifications_fanout", "vhost": "/", "type": "fanout", "durable": true, "auto_delete": false, "internal": false, "arguments": {} }
   ],
   "queues": [
-    { 
-      "name": "notifications_queue", 
-      "vhost": "/", 
-      "durable": true, 
-      "auto_delete": false, 
-      "arguments": {}},
-    {
-      "name": "orders_queue",
-      "vhost": "/",
-      "durable": true,
-      "auto_delete": false,
-      "arguments": {
-        "x-max-priority": 10,
-        "x-dead-letter-exchange": "dlx",
-        "x-dead-letter-routing-key": "orders_queue"
-      }
-    },
-    {
-      "name": "kitchen.retry.q",
-      "vhost": "/",
-      "durable": true,
-      "auto_delete": false,
-      "arguments": {
-        "x-message-ttl": 15000,
-        "x-dead-letter-exchange": "orders_topic",
-        "x-dead-letter-routing-key": "kitchen.retry"
-      }
-    },
-    {
-      "name": "orders_queue.dlq",
-      "vhost": "/",
-      "durable": true,
-      "auto_delete": false,
-      "arguments": {}
-    }
+    { "name": "kitchen.dine_in.q",  "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-max-priority": 10, "x-dead-letter-exchange": "dlx", "x-dead-letter-routing-key": "kitchen.dine_in.dlq" } },
+    { "name": "kitchen.takeout.q",  "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-max-priority": 10, "x-dead-letter-exchange": "dlx", "x-dead-letter-routing-key": "kitchen.takeout.dlq" } },
+    { "name": "kitchen.delivery.q", "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-max-priority": 10, "x-dead-letter-exchange": "dlx", "x-dead-letter-routing-key": "kitchen.delivery.dlq" } },
+
+    { "name": "kitchen.dine_in.retry.q",  "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-message-ttl": 15000, "x-dead-letter-exchange": "orders_topic", "x-dead-letter-routing-key": "kitchen.dine_in.retry" } },
+    { "name": "kitchen.takeout.retry.q",  "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-message-ttl": 15000, "x-dead-letter-exchange": "orders_topic", "x-dead-letter-routing-key": "kitchen.takeout.retry" } },
+    { "name": "kitchen.delivery.retry.q", "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-message-ttl": 15000, "x-dead-letter-exchange": "orders_topic", "x-dead-letter-routing-key": "kitchen.delivery.retry" } },
+
+    { "name": "kitchen.dine_in.dlq",  "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} },
+    { "name": "kitchen.takeout.dlq",  "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} },
+    { "name": "kitchen.delivery.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} },
+
+    { "name": "notifications_queue", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} }
   ],
   "bindings": [
-    {
-      "source": "orders_topic",
-      "vhost": "/",
-      "destination": "orders_queue",
-      "destination_type": "queue",
-      "routing_key": "kitchen.*.*",
-      "arguments": {}
-    },
-    {
-      "source": "orders_topic",
-      "vhost": "/",
-      "destination": "orders_queue",
-      "destination_type": "queue",
-      "routing_key": "kitchen.retry",
-      "arguments": {}
-    },
-    {
-      "source": "dlx",
-      "vhost": "/",
-      "destination": "orders_queue.dlq",
-      "destination_type": "queue",
-      "routing_key": "orders_queue",
-      "arguments": {}
-    }
+    { "source": "orders_topic", "vhost": "/", "destination": "kitchen.dine_in.q",  "destination_type": "queue", "routing_key": "kitchen.dine_in.*",  "arguments": {} },
+    { "source": "orders_topic", "vhost": "/", "destination": "kitchen.takeout.q",  "destination_type": "queue", "routing_key": "kitchen.takeout.*",  "arguments": {} },
+    { "source": "orders_topic", "vhost": "/", "destination": "kitchen.delivery.q", "destination_type": "queue", "routing_key": "kitchen.delivery.*", "arguments": {} },
+
+    { "source": "orders_topic", "vhost": "/", "destination": "kitchen.dine_in.q",  "destination_type": "queue", "routing_key": "kitchen.dine_in.retry",  "arguments": {} },
+    { "source": "orders_topic", "vhost": "/", "destination": "kitchen.takeout.q",  "destination_type": "queue", "routing_key": "kitchen.takeout.retry",  "arguments": {} },
+    { "source": "orders_topic", "vhost": "/", "destination": "kitchen.delivery.q", "destination_type": "queue", "routing_key": "kitchen.delivery.retry", "arguments": {} },
+
+    { "source": "dlx", "vhost": "/", "destination": "kitchen.dine_in.dlq",  "destination_type": "queue", "routing_key": "kitchen.dine_in.dlq",  "arguments": {} },
+    { "source": "dlx", "vhost": "/", "destination": "kitchen.takeout.dlq",  "destination_type": "queue", "routing_key": "kitchen.takeout.dlq",  "arguments": {} },
+    { "source": "dlx", "vhost": "/", "destination": "kitchen.delivery.dlq", "destination_type": "queue", "routing_key": "kitchen.delivery.dlq", "arguments": {} },
+
+    { "source": "notifications_fanout", "vhost": "/", "destination": "notifications_queue", "destination_type": "queue", "routing_key": "", "arguments": {} }
   ]
 }

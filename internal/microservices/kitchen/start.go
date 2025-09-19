@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log"
+
 	"wheres-my-pizza/internal/connections/rabbitmq"
 	"wheres-my-pizza/internal/microservices/kitchen/repository"
 	"wheres-my-pizza/internal/microservices/kitchen/service"

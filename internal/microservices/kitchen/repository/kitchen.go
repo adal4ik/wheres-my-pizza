@@ -7,7 +7,7 @@ import (
 )
 
 type KitchenRepositoryInterface interface {
-	RegisterOrFail(ctx context.Context, name, wtype string) (bool, error)
+	RegisterOrWakeUp(ctx context.Context, name, wtype string) (bool, error)
 	SetOffline(ctx context.Context, name string) error
 	Heartbeat(ctx context.Context, name string) error
 
@@ -25,11 +25,13 @@ type KitchenRepository struct {
 func NewKitchenRepository(db *sql.DB) KitchenRepositoryInterface {
 	return &KitchenRepository{db: db}
 }
+
 func (r *KitchenRepository) Heartbeat(ctx context.Context, name string) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE workers SET last_seen=now() WHERE name=$1`, name)
 	return err
 }
-func (r *KitchenRepository) RegisterOrFail(ctx context.Context, name, wtype string) (bool, error) {
+
+func (r *KitchenRepository) RegisterOrWakeUp(ctx context.Context, name, wtype string) (bool, error) {
 	// смотрим текущее состояние
 	var status string
 	err := r.db.QueryRowContext(ctx, `SELECT status FROM workers WHERE name=$1`, name).Scan(&status)

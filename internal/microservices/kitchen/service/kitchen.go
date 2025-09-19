@@ -82,6 +82,10 @@ func (ks *KitchenService) Heartbeat(ctx context.Context) error {
 
 func (ks *KitchenService) Run(ctx context.Context) error {
 	rmqChannel := ks.rmqClient.Channel()
+	err := rmqChannel.Qos(ks.Prefetch, 0, false)
+	if err != nil {
+		return err
+	}
 	defer rmqChannel.Close()
 	messageChannel, err := rmqChannel.Consume(
 		ks.Queue,
@@ -98,8 +102,6 @@ func (ks *KitchenService) Run(ctx context.Context) error {
 	}
 	for msg := range messageChannel {
 		log.Println("Received a message: ", string(msg.Body))
-		time.Sleep(10 * time.Second)
-		msg.Ack(true)
 	}
 	return nil
 }

@@ -16,7 +16,7 @@ type KitchenRepositoryInterface interface {
 	MarkReadyTx(ctx context.Context, orderNumber, workerName string) error
 
 	// Если входящие события содержат только id — вытянуть order_number
-	GetOrderNumber(ctx context.Context, id string) (string, error)
+	GetOrderNumber(ctx context.Context, id int64) (string, error)
 }
 type KitchenRepository struct {
 	db *sql.DB
@@ -57,7 +57,7 @@ func (r *KitchenRepository) SetOffline(ctx context.Context, name string) error {
 	return err
 }
 
-func (r *KitchenRepository) GetOrderNumber(ctx context.Context, id string) (string, error) {
+func (r *KitchenRepository) GetOrderNumber(ctx context.Context, id int64) (string, error) {
 	var n string
 	err := r.db.QueryRowContext(ctx, `SELECT order_number FROM orders WHERE id=$1`, id).Scan(&n)
 	return n, err
